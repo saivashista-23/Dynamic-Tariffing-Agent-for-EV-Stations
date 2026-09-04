@@ -1,0 +1,9 @@
+Descriptive Statistics for queue_length_proxy:
+count    720.000000
+mean       0.103143
+std        0.167217
+min        0.000000
+25%        0.000000
+50%        0.000000
+75%        0.162955
+max        0.983806

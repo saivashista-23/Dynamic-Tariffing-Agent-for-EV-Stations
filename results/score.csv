@@ -1,0 +1,13 @@
+target,model,train_r2,test_r2,test_rmse,test_mae
+congestion_probability,LightGBM,0.9961,0.9824,0.0250,0.0032
+charger_util,LightGBM,0.9946,0.9920,0.0143,0.0087
+chargingload,LightGBM,0.9928,0.9872,4.2546,1.2803
+charging_demand_kwh,LightGBM,0.9965,0.9932,105.4515,36.2377
+occupancy_density,LightGBM,0.9900,0.9864,0.0204,0.0125
+queue_length_proxy,LightGBM,0.9989,0.9852,0.3509,0.0179
+congestion_probability,XGBoost,0.9995,0.9782,0.0278,0.0040
+charger_util,XGBoost,0.9976,0.9930,0.0133,0.0077
+chargingload,XGBoost,0.9973,0.9845,4.6713,1.3635
+charging_demand_kwh,XGBoost,0.9989,0.9933,105.0309,33.8664
+occupancy_density,XGBoost,0.9949,0.9873,0.0197,0.0115
+queue_length_proxy,XGBoost,1.0000,0.9773,0.4348,0.0165

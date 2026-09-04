@@ -1,0 +1,9 @@
+Descriptive Statistics for chargingload:
+count    720.000000
+mean      21.097390
+std        1.049524
+min       16.969347
+25%       20.419165
+50%       21.143171
+75%       21.844764
+max       24.405128

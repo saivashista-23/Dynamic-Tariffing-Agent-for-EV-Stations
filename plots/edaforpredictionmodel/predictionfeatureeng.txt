@@ -1,0 +1,65 @@
+# Demand Prediction Feature Engineering Insights
+
+This document outlines the lag engineering strategy derived from the Time-Series EDA (ACF/PACF plots, Seasonal Decompositions, and Box Plots).
+
+## Features of chargingutilrate
+
+Based on the Generalized Grid EDA for `charger_util`, we have extracted the following time-series correlations. To fully capture momentum, daily seasonality, and weekly seasonality, we added the following engineered lag features to the training data:
+
+1. **Short-Term Momentum (Lag 1, 2, 3)**
+   - `util_lag_1`, `util_lag_2`, `util_lag_3`
+   - *Justification:* The PACF plot shows maximum correlation at $t-1$. Adding lags 2 and 3 allows the tree-based model to calculate the current trajectory (derivative) of demand to know if the curve is steepening or flattening.
+
+2. **Half-Day & Daily Seasonality (Lag 12 & Lag 24)**
+   - `util_lag_12`, `util_lag_24`
+   - *Justification:* Intraday overlapping plots and PACF confirm massive cyclical correlations. Lag 12 captures the AM/PM symmetry (e.g., 8 AM commute vs 8 PM), while Lag 24 tells the model what happened at this exact time yesterday.
+
+3. **Weekly Seasonality (The "Golden" Lag 168)**
+   - `util_lag_168`
+   - *Justification:* The 30-day time plots show structurally identical patterns on a week-by-week basis. Since yesterday (Lag 24) might be a Sunday while today is a Monday, `util_lag_168` tells the model what happened at this exact hour on the exact same day of the week last week.
+
+4. **Rolling Window Smoothing**
+   - `util_rolling_mean_6h` (Average of the last 6 hours)
+   - `util_rolling_mean_24h` (Average of the last 24 hours)
+   - *Justification:* Raw point-in-time lags (like exactly $t-24$) are susceptible to random 1-day anomalies (like a weather event). Rolling averages provide the model with a smoothed baseline to improve generalization.
+
+## Features of charging_demand
+Because Total Energy Demand (kWh) is fundamentally driven by the same human behavioral patterns as Utilization Rate (how many people plugged in), the PACF and Seasonal plots mirror each other perfectly. Therefore, we added the exact same lag architecture:
+- `demand_lag_1`, `demand_lag_2`, `demand_lag_3` (Momentum)
+- `demand_lag_12`, `demand_lag_24` (AM/PM and Daily cycles)
+- `demand_lag_168` (Weekly)
+- `demand_rolling_mean` (Smoothing)
+
+## Features of chargingload
+Unlike Utilization and Demand (which are volume metrics), `chargingload` measures the physical physics of the chargers (Average Power Draw in kW).
+The user astutely observed that the PACF plot for `chargingload` lacks a strong weekly seasonality spike. This makes logical sense: while *how many* people charge changes on weekends, the *speed* at which the batteries accept power (fast vs slow charging) is largely a function of the time of day and the hardware, not the day of the week.
+Therefore, we added only the following features:
+- `load_lag_1`, `load_lag_2`, `load_lag_3` (Immediate trajectory of power draw)
+- `load_lag_12`, `load_lag_24` (AM/PM and Daily cycle of hardware utilization)
+
+## Features of Group 3 (occupancy_density, congestion_probability, queue_length_proxy)
+These variables are grouped because they describe the real-time physical state of the grid.
+- Lags [1, 2, 3, 12, 24] are applied to all three variables to track immediate traffic buildup and daily patterns.
+- Congestion Rolling Mean 6h: Because `congestion_probability` relies on a strict threshold (>80% full), it can be highly volatile. The 6-hour rolling mean smooths out false anomalies.
+
+- `occupancy_lag_1`, `occupancy_lag_2`, `occupancy_lag_3` (Current traffic momentum)
+- `occupancy_lag_12`, `occupancy_lag_24` (AM/PM and Daily traffic cycles)
+- `congestion_lag_1`, `congestion_lag_2`, `congestion_lag_3` (Queue/Jam momentum)
+- `congestion_lag_12`, `congestion_lag_24` (AM/PM and Daily rush hours)
+- `congestion_rolling_mean_6h` (To smooth out isolated, transient 5-minute anomalies)
+- `queue_proxy_lag_1`, `queue_proxy_lag_2`, `queue_proxy_lag_3` (Queue depth momentum)
+- `queue_proxy_lag_12`, `queue_proxy_lag_24` (AM/PM and Daily rush hours)
+
+## Pre-Modeling Feature Dropping
+
+Right before executing `model.fit()`, the following two raw features **must** be dropped from the dataset. Leaving them in will either crash the algorithm or severely damage its ability to generalize:
+
+1. **Drop `hour_floor`**
+   - *Why?* Tree-based ML algorithms cannot perform mathematics on raw datetime strings (e.g., "2022-01-01 14:00:00"). Furthermore, the time progression has already been perfectly mathematically mapped via our Engineered Cyclic Features (`hour_sin/cos`, `dayofweek_sin/cos`) and our heavy Lag Architecture.
+
+2. **Drop `grid`**
+   - *Why?* If the model sees the raw categorical `grid` ID (e.g., "Grid 200"), the decision tree will memorize the specific behavior of stations in Shenzhen and massively overfit to that exact city.
+   - By dropping the ID, we force the AI to "go blind" to location names and instead learn from the underlying **Spatial Physics** (`lon`, `la`, `area`, `grid_adj_count`, `grid_mean_dist`). This guarantees the model can accurately predict demand in a brand new city like New York or London based purely on geographic density and network physics.
+
+3. **Drop `time_bucket`**
+   - *Why?* This string feature (e.g., "Morning", "Evening") was engineered exclusively for data visualization (plotting the hourly volatility graphs). For the actual Machine Learning model, the flow of time is already mathematically mapped with extreme precision via the cyclic `hour_sin`/`hour_cos` features, rendering the text bucket redundant and unnecessary.

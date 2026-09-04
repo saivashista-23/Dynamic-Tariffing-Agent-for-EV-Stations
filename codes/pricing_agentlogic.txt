@@ -1,0 +1,49 @@
+====================================================================
+PRICING AGENT LOGIC & ARCHITECTURE DOCUMENTATION
+====================================================================
+
+1. THE CORE REINFORCEMENT LEARNING ARCHITECTURE (MDP)
+--------------------------------------------------------------------
+The Pricing Agent operates as a Markov Decision Process (MDP) in a custom Reinforcement Learning loop (e.g., PPO or DQN):
+- State Space (S_t): Pulls Baseline Predictions from LightGBM (Demand, Occupancy, Congestion) and the grid type (is_cbd).
+- Action Space (A_t): A single continuous value representing Price % Change (Negative for Discount, Positive for Surge).
+- Environment: A "Customer Reaction Simulator" that intercepts the pricing action, applies elasticity physics, and outputs the Final Simulated Reality.
+- Reward (R_t): A mathematically unified function scoring the action based on Revenue, Utilization, and Congestion metrics.
+
+2. PRICE ELASTICITY INSIGHTS (DERIVED FROM EDA)
+--------------------------------------------------------------------
+The economic rules governing the Simulation Environment are directly derived from the physical constraints observed during our EDA phase:
+
+* CBD GRIDS (Highly Elastic / Price Sensitive):
+  - EDA Proof: CBD grids are severely over-provisioned with chargers, resulting in very low utilization per pile (2-4 kWh/day). 
+  - Behavior: Because supply outweighs demand, customers have endless alternatives. If prices rise, they will drive to an empty, cheaper station nearby.
+  - Action Constraints: Deep Discounts allowed (up to -50%) to attract volume from competitors. Surges strictly capped (Max +10%) to prevent total customer flight.
+
+* NON-CBD GRIDS (Highly Inelastic / Price Insensitive):
+  - EDA Proof: Workplace and Residential grids have massive commuter peaks and high structural utilization per pile. 
+  - Behavior: During morning rushes, demand vastly exceeds supply. Customers are physically trapped at their workplace/home and must charge. They have no alternatives.
+  - Action Constraints: Maximum Surges heavily utilized (up to +50%) to maximize revenue from trapped users and force necessary load-shifting. Discounts capped (-20%) because discounting a captive audience destroys revenue unnecessarily.
+
+3. DRAWBACK 1: SPLIT REWARD DISCONTINUITY
+--------------------------------------------------------------------
+* The Idea: Designing completely separate reward equations based on whether the AI decides to Surge vs Discount (e.g., scoring only "queue reduction" on surges, and only "off-peak uplift" on discounts).
+* The Drawback: This creates a discontinuous reward landscape at the $0.0 price mark. RL neural networks rely on gradient descent. If the reward variables suddenly swap or invert when crossing zero, gradients will explode/collapse, and the AI will fail to converge.
+* The Solution: A Unified Reward Equation with Dynamic Weighting.
+  R_t = (w_rev * d_Revenue) + (w_util * d_Utilization) + (w_uplift * Uplift) - (w_queue * d_Queue)
+  Instead of hard if/else statements, the relative weights (w) shift dynamically. When surging, w_util becomes negative (rewarding decreased utilization) and w_queue heavily penalizes queues. When discounting, w_util becomes positive (rewarding increased utilization). To maintain mathematical stability, the Agent's action is passed through a continuous transition function (like tanh) to smoothly blend these weights at the zero boundary.
+
+4. DRAWBACK 2: Q-LEARNING FOR ELASTICITY PROXIES
+--------------------------------------------------------------------
+* The Idea: Using an offline Q-Learning agent on historical ACN and UrbanEV datasets to extract the base Elasticity coefficients for Non-CBD and CBD grids.
+* The Drawback: Q-Learning is an active algorithm requiring States, Actions (Prices), and Rewards. Our historical datasets primarily track passive volume over time; they lack minute-by-minute dynamic pricing fluctuations. If fed static-price data, offline RL cannot observe state-transitions resulting from price shocks. It will simply memorize the natural daily demand curve (Out-of-Distribution failure) rather than learning "Elasticity".
+* The Solution: To extract pure elasticity proxies from passive historical data, a traditional multivariate statistical regression (Demand ~ Price + Time) must be used. It is mathematically stable, avoids OOD errors, and correctly isolates the price coefficient.
+
+5. THE PARAMETERIZED HEURISTIC OPTIMIZER (LEARNING LOOP)
+--------------------------------------------------------------------
+* The Architecture: The Pricing Agent is NOT a Tabular Q-Learning Agent. It is a Parameterized Heuristic Function.
+* Context Handling: The Agent does not need to read the clock or calendar because the LightGBM Demand Prediction Model already handles all spatial/temporal context (e.g., weather, holidays, CBD status). LightGBM distills that context into three variables: predicted_utilization, predicted_congestion, and predicted_load.
+* The Pricing Function: 
+  Price = Base_Price + f(predicted_utilization, predicted_congestion)
+  If utilization > threshold: Apply Surge Formula (scaled by aggressiveness parameter, Alpha)
+  If utilization < threshold: Apply Discount Formula (scaled by aggressiveness parameter, Delta)
+* The Optimizer: The "Learning Agent" runs the simulator over the entire 4-week dataset repeatedly. Its goal is to tune the global Alpha and Delta parameters to maximize the Unified Reward Equation over the entire historical set, finding the mathematically optimal aggressiveness levels for surging and discounting.

@@ -1,0 +1,35 @@
+ACN data models workplace/campus charging behavior.
+These peak hours and congestion patterns differ significantly from public city (CBD) charging.
+
+UrbanEV Insights (CBD vs Non-CBD):
+1. Scale Differences: Average demand per pile in CBD areas is surprisingly low, fluctuating between 2-4 kWh per day. In contrast, Non-CBD (workplace/residential) areas see much higher per-pile utilization, fluctuating between 5-10 kWh per day. This proves that while CBD grids as a whole handle more total energy, they are heavily over-provisioned with chargers, leading to lower utilization per individual pile compared to Non-CBD areas.
+2. Volatility: The CBD graph seems to have sharper, more dramatic relative drops (perhaps on specific weekends or holidays?), whereas the non-CBD areas show a slightly more stable oscillation pattern due to consistent commuting/residential charging.
+
+Pricing Implications & Prediction Agent Insights:
+1. Demand Predictability (Prediction Agent): Workplace/Residential charging (Non-CBD) exhibits massive, highly predictable patterns based on the workweek. The Prediction Agent must heavily weight 'day_of_week' and 'is_weekend'.
+2. Price Elasticity & User Behavior: 
+   - CBD areas are Highly ELASTIC. Because they are over-provisioned with chargers (low utilization per pile), customers have endless alternatives. If prices surge, they will easily drive to the cheaper station next door.
+   - Non-CBD areas are Highly INELASTIC. Because they have massive commuter peaks and high utilization per pile, customers are locked-in during morning rushes. They have no alternatives and must pay the surge price.
+3. Surge Pricing vs. Discounting (Pricing Agent Objectives): 
+   - CBD Pricing Agent Objective: Focus heavily on "Off-Peak Discounts" to aggressively steal price-sensitive customers from neighboring grids and fill idle piles.
+   - Workplace Pricing Agent Objective: Focus heavily on "Surge Pricing" during peak commuter hours to maximize revenue from trapped, price-insensitive commuters, forcing load-shifting to reduce wait times.
+
+Architecture Implications (Agent Design):
+- Context-Aware Agents: Instead of a one-size-fits-all model, the system should use the CBD status to shift its optimization metrics.
+
+Data Strategy (Prediction Model):
+- Model Training Data: The Demand Prediction Model should be trained exclusively on the UrbanEV (Shenzhen) dataset.
+- Justification: Cross-verification of the ACN (US Workplace) and UrbanEV Non-CBD (Shenzhen Workplace/Residential) plots reveals nearly identical structural trends (massive weekend drop-offs, consistent commuting peaks). Therefore, the UrbanEV dataset acts as a comprehensive "superset." By using it exclusively, we avoid geographic domain-shift issues while still allowing the model to learn both distinct charging behaviors (Workplace vs Public) simply by relying on the 'CBD' feature flag.
+- Generalization via Spatial Attributes (Option 3): The `grid` ID must be excluded from the feature list entirely during training. Instead, the model relies solely on spatial and geographical physics: `lon`, `la`, `CBD`, `area`, `grid_adj_count` (Network connectivity), and `grid_mean_dist` (Proximity).
+  * Benefit: This approach prevents overfitting to specific grid numbers and allows the model to predict demand for a newly built charging station anywhere in the world simply by inputting its physical location and connectivity features.
+
+4. Grid-Specific Surging Thresholds (Pricing Agent Optimization):
+- The 30-day time-series plot of all 275 grids (`all_grids_30_day_trend.png`) exposes extreme variance in structural utilization rates between grids. Some grids naturally peak around 10% daily average utilization, while others regularly exceed 50%.
+- The Pricing Agent must calculate dynamic, grid-specific thresholds. For instance, surging when a grid's current utilization exceeds the 90th percentile of its own historical distribution. This guarantees maximum revenue by reacting accurately to the local physics and demand ceiling of each individual 1km square.
+
+5. Universal Network Load Balancing Thresholds:
+- To enable true "Network Balancing" (where the AI physically moves cars between adjacent zones using prices as a magnet), thresholds cannot be entirely grid-specific. They must be grouped.
+- By splitting the network into CBD and Non-CBD groups, we establish objective, network-wide baseline thresholds:
+  * CBD Thresholds: Surge > 29.38% (80th Pct), Discount < 8.66% (20th Pct)
+  * Non-CBD Thresholds: Surge > 34.94% (80th Pct), Discount < 9.80% (20th Pct)
+- If a CBD station hits 30% utilization, it surges. If a nearby Non-CBD station is at 30% utilization, it remains at normal price (since it is below its 34.94% threshold). This price delta acts as a financial magnet, pulling excess demand out of the CBD and into the Non-CBD zone!

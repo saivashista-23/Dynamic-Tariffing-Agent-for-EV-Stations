@@ -1,0 +1,9 @@
+Descriptive Statistics for charger_util:
+count    720.000000
+mean       0.225664
+std        0.041314
+min        0.157354
+25%        0.189006
+50%        0.220683
+75%        0.264752
+max        0.309434

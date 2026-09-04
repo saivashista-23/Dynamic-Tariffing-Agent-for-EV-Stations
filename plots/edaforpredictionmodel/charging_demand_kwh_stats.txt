@@ -1,0 +1,9 @@
+Descriptive Statistics for charging_demand_kwh:
+count    720.000000
+mean     440.141374
+std      133.141630
+min      231.423395
+25%      329.189673
+50%      405.957390
+75%      561.888082
+max      743.025002

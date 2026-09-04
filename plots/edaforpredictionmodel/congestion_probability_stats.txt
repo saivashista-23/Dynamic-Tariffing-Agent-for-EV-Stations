@@ -1,0 +1,9 @@
+Descriptive Statistics for congestion_probability:
+count    720.000000
+mean       0.038647
+std        0.024328
+min        0.004049
+25%        0.016447
+50%        0.030027
+75%        0.062078
+max        0.088394
