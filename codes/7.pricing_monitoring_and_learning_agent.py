@@ -20,6 +20,7 @@ MAX_STEP_INTRA = 0.10
 MAX_MULTIPLIER = 1.85
 MIN_MULTIPLIER = 0.50
 STEPS_PER_HOUR = 5 # 60 mins / 12 mins
+TRAFFIC_WEIGHT = 0.50 # Weight of road traffic congestion index in pricing equations
 
 LEARNING_RATE = 0.005
 EPOCHS = 10
@@ -32,6 +33,16 @@ def load_and_merge_data():
     orig = pd.read_csv(r"datasets/processed/urbanev_hourly_v2.csv", usecols=['grid', 'hour_floor', 'CBD', 'day_of_week', 'hour'])
     
     df = pd.merge(preds, orig, on=['grid', 'hour_floor'], how='inner')
+    
+    # Merge external traffic congestion data fetched via MCP
+    print("Merging external road traffic congestion data (MCP)...")
+    traffic_path = r"datasets/processed/shenzhen_traffic_congestion.csv"
+    if os.path.exists(traffic_path):
+        traffic_df = pd.read_csv(traffic_path, usecols=['hour_floor', 'normalized_traffic_congestion'])
+        df = pd.merge(df, traffic_df, on='hour_floor', how='left')
+        df['normalized_traffic_congestion'] = df['normalized_traffic_congestion'].fillna(0.0)
+    else:
+        df['normalized_traffic_congestion'] = 0.0
     
     df['hour_floor'] = pd.to_datetime(df['hour_floor'])
     df = df.sort_values(by=['grid', 'hour_floor']).reset_index(drop=True)
@@ -65,6 +76,7 @@ def train_optimizer(df):
                 pred_queue = row['queue_length_proxy_predicted']
                 pred_congestion = row['congestion_probability_predicted']
                 pred_load = row['chargingload_predicted']
+                traffic = row['normalized_traffic_congestion']
                 
                 surge_th = CBD_SURGE_TH if is_cbd else NON_CBD_SURGE_TH
                 disc_th = CBD_DISCOUNT_TH if is_cbd else NON_CBD_DISCOUNT_TH
@@ -73,13 +85,13 @@ def train_optimizer(df):
                 alpha = alpha_matrix[cbd_idx, how]
                 delta = delta_matrix[cbd_idx, how]
                 
-                # Heuristic Equation with Stress/Vacancy Scoring
+                # Heuristic Equation with Stress/Vacancy Scoring + Road Traffic (MCP)
                 target_price = 1.0
                 if pred_util > surge_th:
-                    stress_score = (pred_util - surge_th) + pred_congestion + (pred_load / 240.0)
+                    stress_score = (pred_util - surge_th) + pred_congestion + (pred_load / 240.0) + (TRAFFIC_WEIGHT * traffic)
                     target_price = 1.0 + alpha * stress_score
                 elif pred_util < disc_th:
-                    vacancy_score = (disc_th - pred_util) + (1.0 - pred_congestion) + (1.0 - (pred_load / 240.0))
+                    vacancy_score = (disc_th - pred_util) + (1.0 - pred_congestion) + (1.0 - (pred_load / 240.0)) + (TRAFFIC_WEIGHT * (1.0 - traffic))
                     target_price = 1.0 - delta * vacancy_score
                 
                 target_price = np.clip(target_price, MIN_MULTIPLIER, MAX_MULTIPLIER)
@@ -153,6 +165,7 @@ def run_production_simulation(df, alpha_matrix, delta_matrix, silent=False):
             pred_queue = row['queue_length_proxy_predicted']
             pred_congestion = row['congestion_probability_predicted']
             pred_load = row['chargingload_predicted']
+            traffic = row['normalized_traffic_congestion']
             
             # For accurate KPI metrics, we compare against the ACTUAL historical data, not the prediction
             actual_util = row['charger_util_actual']
@@ -166,13 +179,13 @@ def run_production_simulation(df, alpha_matrix, delta_matrix, silent=False):
             alpha = alpha_matrix[cbd_idx, how]
             delta = delta_matrix[cbd_idx, how]
             
-            # Heuristic Equation with Stress/Vacancy Scoring
+            # Heuristic Equation with Stress/Vacancy Scoring + Road Traffic (MCP)
             target_price = 1.0
             if pred_util > surge_th:
-                stress_score = (pred_util - surge_th) + pred_congestion + (pred_load / 240.0)
+                stress_score = (pred_util - surge_th) + pred_congestion + (pred_load / 240.0) + (TRAFFIC_WEIGHT * traffic)
                 target_price = 1.0 + alpha * stress_score
             elif pred_util < disc_th:
-                vacancy_score = (disc_th - pred_util) + (1.0 - pred_congestion) + (1.0 - (pred_load / 240.0))
+                vacancy_score = (disc_th - pred_util) + (1.0 - pred_congestion) + (1.0 - (pred_load / 240.0)) + (TRAFFIC_WEIGHT * (1.0 - traffic))
                 target_price = 1.0 - delta * vacancy_score
             
             target_price = np.clip(target_price, MIN_MULTIPLIER, MAX_MULTIPLIER)
